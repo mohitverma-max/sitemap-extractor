@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sitemap Extractor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f4f6fb; --surface:#ffffff; --surface-2:#eef1fa; --surface-3:#e0e5f3;
+    --border:#d6dcea; --ink:#1a1f2e; --ink-muted:#545e72; --ink-faint:#8890a0;
+    --accent:#23386f; --accent-contrast:#ffffff; --accent-tint:#e8eef7; --accent-tint-ink:#1b2c57;
+    --accent-grad-start:#23386f; --accent-grad-end:#4590a5;
+    --danger:#a3453a; --danger-tint:#f5e3e0;
+    --warn:#8a6d1c; --warn-tint:#f5efd9;
+    --shadow: 0 1px 2px rgba(26,31,46,.06), 0 8px 24px rgba(26,31,46,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0b0f1a; --surface:#121728; --surface-2:#182036; --surface-3:#202b47;
+      --border:#2c3752; --ink:#e8ecf7; --ink-muted:#a8b2c7; --ink-faint:#6e7890;
+      --accent:#6fb6ce; --accent-contrast:#08131c; --accent-tint:#15283a; --accent-tint-ink:#a9e0ef;
+      --accent-grad-start:#3a5a9e; --accent-grad-end:#5fd1e8;
+      --danger:#e2897c; --danger-tint:#3a2320;
+      --warn:#e6c766; --warn-tint:#332c14;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0b0f1a; --surface:#121728; --surface-2:#182036; --surface-3:#202b47;
+    --border:#2c3752; --ink:#e8ecf7; --ink-muted:#a8b2c7; --ink-faint:#6e7890;
+    --accent:#6fb6ce; --accent-contrast:#08131c; --accent-tint:#15283a; --accent-tint-ink:#a9e0ef;
+    --accent-grad-start:#3a5a9e; --accent-grad-end:#5fd1e8;
+    --danger:#e2897c; --danger-tint:#3a2320;
+    --warn:#e6c766; --warn-tint:#332c14;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{ max-width:1120px; margin:0 auto; padding:28px 20px 64px; }
+  header.top{
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end;
+    gap:10px; margin-bottom:18px;
+  }
+  .stat{ font-size:13px; color:var(--ink-muted); }
+  .stat b{ color:var(--ink); font-family:'IBM Plex Mono', monospace; }
+  h1,h2,h3{ font-family:'Archivo', sans-serif; margin:0; }
+  .panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:22px; box-shadow:var(--shadow); margin-bottom:20px;
+  }
+  .panel h2{
+    font-size:15px; text-transform:uppercase; letter-spacing:.06em; color:var(--accent);
+    margin-bottom:16px; font-weight:700;
+  }
+  label{ display:block; font-size:13px; font-weight:600; color:var(--ink-muted); margin-bottom:6px; }
+  input[type="text"], input[type="search"], textarea{
+    width:100%; padding:11px 13px; border-radius:9px; border:1px solid var(--border);
+    background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans', sans-serif; font-size:14.5px;
+    outline:none; transition:border-color .15s;
+  }
+  input:focus, textarea:focus{ border-color:var(--accent); }
+  textarea{ font-family:'IBM Plex Mono', monospace; font-size:12.5px; resize:vertical; min-height:160px; }
+  .field{ margin-bottom:16px; }
+  .field .hint{ font-size:12px; color:var(--ink-faint); margin-top:5px; }
+
+  .tabs{ display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid var(--border); }
+  .tab-btn{
+    appearance:none; background:none; border:none; padding:9px 4px; margin-right:18px;
+    font-size:13.5px; font-weight:700; color:var(--ink-faint); cursor:pointer;
+    border-bottom:2px solid transparent; margin-bottom:-1px;
+  }
+  .tab-btn.active{ color:var(--accent); border-bottom-color:var(--accent); }
+  .tab-panel{ display:none; }
+  .tab-panel.active{ display:block; }
+
+  .row-inline{ display:flex; gap:10px; }
+  .row-inline input{ flex:1; }
+
+  .btn{
+    appearance:none; border:none; border-radius:10px; padding:12px 20px; font-size:14.5px;
+    font-weight:700; cursor:pointer; font-family:'IBM Plex Sans', sans-serif; display:inline-flex;
+    align-items:center; gap:8px; transition:transform .08s, opacity .12s; white-space:nowrap;
+  }
+  .btn:active{ transform:scale(.98); }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .btn.primary{ background:linear-gradient(135deg, var(--accent-grad-start), var(--accent-grad-end)); color:var(--accent-contrast); }
+  .btn.primary:hover:not(:disabled){ opacity:.92; }
+  .btn.ghost{ background:var(--surface-2); color:var(--ink-muted); border:1px solid var(--border); }
+  .btn.ghost:hover:not(:disabled){ color:var(--ink); }
+  .btn.danger-ghost{ background:var(--surface-2); color:var(--danger); border:1px solid var(--border); }
+  .btn.small{ padding:7px 13px; font-size:12.5px; border-radius:8px; }
+
+  .spinner{
+    width:15px; height:15px; border-radius:50%; border:2px solid rgba(0,0,0,.15);
+    border-top-color:var(--accent); animation:spin .7s linear infinite; display:inline-block;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .msg{ margin-top:14px; padding:12px 14px; border-radius:9px; font-size:13.5px; line-height:1.55; }
+  .msg.error{ background:var(--danger-tint); color:var(--danger); }
+  .msg.warn{ background:var(--warn-tint); color:var(--warn); }
+  .msg.info{ background:var(--accent-tint); color:var(--accent-tint-ink); }
+  .msg.loading{ background:var(--surface-2); color:var(--ink-muted); display:flex; align-items:center; gap:10px; }
+  .msg a{ color:inherit; font-weight:700; text-decoration:underline; }
+  .msg ul{ margin:8px 0 0; padding-left:18px; }
+  .msg li{ margin-bottom:3px; word-break:break-all; }
+
+  .recent{ margin-top:10px; }
+  .recent .label{ font-size:12px; color:var(--ink-faint); margin-right:8px; }
+  .recent button{
+    background:none; border:none; color:var(--accent); font-size:12.5px; cursor:pointer;
+    font-weight:600; padding:2px 0; margin-right:14px; font-family:'IBM Plex Sans', sans-serif;
+  }
+  .recent button:hover{ text-decoration:underline; }
+
+  .toolbar{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .toolbar .left, .toolbar .right{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .search-box{ width:220px; }
+  .count-line{ font-size:13px; color:var(--ink-muted); white-space:nowrap; }
+  .count-line b{ color:var(--ink); }
+
+  table.results{ width:100%; border-collapse:collapse; font-size:13.5px; }
+  table.results th{
+    text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint);
+    padding:8px 10px; border-bottom:2px solid var(--border); font-weight:700; white-space:nowrap;
+  }
+  table.results td{ padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  table.results tr:last-child td{ border-bottom:none; }
+  .q-text{ font-family:'IBM Plex Mono', monospace; font-size:12.5px; color:var(--ink); word-break:break-all; }
+  .meta-col{ font-size:12px; color:var(--ink-muted); font-family:'IBM Plex Mono', monospace; white-space:nowrap; }
+  .row-del{ background:transparent; border:1px solid var(--border); color:var(--ink-faint); border-radius:7px; padding:5px 9px; font-size:11.5px; cursor:pointer; font-weight:600; }
+  .row-del:hover{ color:var(--danger); border-color:var(--danger); }
+  input[type="checkbox"]{ width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
+
+  .pagination{ display:flex; align-items:center; justify-content:center; gap:14px; margin-top:18px; }
+  .pagination button{
+    background:var(--surface-2); border:1px solid var(--border); color:var(--ink-muted);
+    border-radius:8px; padding:6px 13px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .pagination button:disabled{ opacity:.4; cursor:not-allowed; }
+  .pagination .page-info{ font-size:12.5px; color:var(--ink-faint); font-family:'IBM Plex Mono', monospace; }
+
+  .add-url-row{ display:flex; gap:8px; margin-bottom:16px; }
+  .add-url-row input{ flex:1; }
+
+  .empty-state{ text-align:center; padding:36px 20px; color:var(--ink-faint); font-size:14px; }
+
+  .export-row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
+
+  footer.note{ font-size:12px; color:var(--ink-faint); line-height:1.6; margin-top:26px; text-align:center; }
+  footer.note a{ color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="stat"><b id="totalCount">0</b> URLs loaded</div>
+  </header>
+
+  <main>
+
+    <section class="panel">
+      <h2>Load a sitemap</h2>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="urlTab" type="button">Fetch by URL</button>
+        <button class="tab-btn" data-tab="pasteTab" type="button">Paste XML</button>
+      </div>
+
+      <div class="tab-panel active" id="urlTab">
+        <div class="field">
+          <label for="sitemapUrl">Sitemap URL</label>
+          <div class="row-inline">
+            <input type="text" id="sitemapUrl" placeholder="https://example.com/sitemap.xml">
+            <button class="btn primary" id="fetchBtn" type="button">Fetch</button>
+          </div>
+          <div class="hint">Works when the site allows cross-origin reads of its sitemap. If it's blocked, switch to "Paste XML" — it always works.</div>
+        </div>
+        <div class="recent" id="recentWrap" style="display:none;">
+          <span class="label">Recent:</span>
+          <span id="recentList"></span>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="pasteTab">
+        <div class="field">
+          <label for="pasteArea">Raw sitemap XML</label>
+          <textarea id="pasteArea" placeholder="Open the sitemap URL in a new tab, view source, select all, copy, and paste it here."></textarea>
+        </div>
+        <button class="btn primary" id="parseBtn" type="button">Parse</button>
+      </div>
+
+      <div id="statusMsg"></div>
+    </section>
+
+    <section class="panel" id="resultsPanel" style="display:none;">
+      <h2>URLs</h2>
+
+      <div class="add-url-row">
+        <input type="text" id="addUrlInput" placeholder="Add a URL manually, e.g. https://example.com/new-page">
+        <button class="btn ghost small" id="addUrlBtn" type="button">Add</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="left">
+          <input type="search" id="searchBox" class="search-box" placeholder="Filter by URL…">
+          <button class="btn danger-ghost small" id="deleteSelectedBtn" type="button">Delete selected</button>
+          <button class="btn ghost small" id="clearAllBtn" type="button">Clear all</button>
+        </div>
+        <div class="right count-line" id="countLine"></div>
+      </div>
+
+      <div style="overflow-x:auto;">
+        <table class="results">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="selectAllBox"></th>
+              <th>URL</th>
+              <th>Last Modified</th>
+              <th>Change Freq</th>
+              <th>Priority</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="emptyFiltered" style="display:none;">No URLs match this filter.</div>
+
+      <div class="pagination" id="pagination"></div>
+
+      <div class="export-row">
+        <button class="btn primary" id="downloadXmlBtn" type="button">Download XML Sitemap</button>
+        <button class="btn ghost" id="downloadCsvBtn" type="button">Download CSV</button>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="note">
+    Everything happens in your browser — no sitemap, URL, or file is sent to any server of ours (we don't have one). "Fetch by URL" can be blocked by a site's own CORS policy; "Paste XML" sidesteps that entirely. Sitemap indexes are expanded automatically (up to 30 child files); the working list is capped at 25,000 URLs to keep the page responsive.
+    <br>Mohit's SEO Training · Sitemap Extractor
+  </footer>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+
+var MAX_TOTAL_URLS = 25000;
+var MAX_CHILD_SITEMAPS = 30;
+var PAGE_SIZE = 50;
+
+var masterList = [];      // [{url, lastmod, changefreq, priority}]
+var urlIndex = new Set(); // for O(1) dedupe
+var selected = new Set(); // selected URLs (for bulk delete)
+var filterText = "";
+var currentPage = 1;
+
+function $(id){ return document.getElementById(id); }
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+function escapeXml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+}
+function csvField(v){
+  v = String(v == null ? "" : v);
+  if (/[",\n\r]/.test(v)) return '"' + v.replace(/"/g,'""') + '"';
+  return v;
+}
+
+/* ---------- persistence: recent sitemap URLs only ---------- */
+function getRecents(){
+  try{ return JSON.parse(localStorage.getItem("sitemapextractor.recent") || "[]"); }catch(e){ return []; }
+}
+function pushRecent(u){
+  try{
+    var list = getRecents().filter(function(x){ return x !== u; });
+    list.unshift(u);
+    localStorage.setItem("sitemapextractor.recent", JSON.stringify(list.slice(0,8)));
+  }catch(e){}
+  renderRecents();
+}
+function renderRecents(){
+  var list = getRecents();
+  var wrap = $("recentWrap"), holder = $("recentList");
+  if (!list.length){ wrap.style.display = "none"; return; }
+  wrap.style.display = "block";
+  holder.innerHTML = "";
+  list.forEach(function(u){
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = u;
+    b.addEventListener("click", function(){ $("sitemapUrl").value = u; $("sitemapUrl").focus(); });
+    holder.appendChild(b);
+  });
+}
+
+/* ---------- status messages ---------- */
+function setStatus(kind, html){
+  var el = $("statusMsg");
+  if (!html){ el.innerHTML = ""; return; }
+  el.innerHTML = "<div class='msg " + kind + "'>" + html + "</div>";
+}
+function showLoading(text){ setStatus("loading", "<span class='spinner'></span>" + escapeHtml(text)); }
+function showError(text){ setStatus("error", escapeHtml(text)); }
+function showInfo(html){ setStatus("info", html); }
+function showWarn(html){ setStatus("warn", html); }
+
+/* ---------- XML parsing ---------- */
+function getChildText(node, tagName){
+  var els = node.getElementsByTagName(tagName);
+  if (els.length && els[0].textContent) return els[0].textContent.trim();
+  for (var i=0;i<node.children.length;i++){
+    var c = node.children[i];
+    var localName = c.tagName.split(":").pop();
+    if (localName.toLowerCase() === tagName) return (c.textContent||"").trim();
+  }
+  return "";
+}
+
+function parseSitemapXml(text){
+  var doc = new DOMParser().parseFromString(text, "application/xml");
+  var errorNode = doc.querySelector("parsererror");
+  if (errorNode) throw new Error("That content isn't valid XML.");
+  var root = doc.documentElement;
+  if (!root) throw new Error("Empty document.");
+  var rootName = root.tagName.toLowerCase().replace(/^.*:/, "");
+
+  if (rootName === "urlset"){
+    var urlNodes = doc.getElementsByTagName("url");
+    var entries = [];
+    for (var i=0;i<urlNodes.length;i++){
+      var node = urlNodes[i];
+      var loc = getChildText(node, "loc");
+      if (!loc) continue;
+      entries.push({
+        url: loc.trim(),
+        lastmod: getChildText(node, "lastmod"),
+        changefreq: getChildText(node, "changefreq"),
+        priority: getChildText(node, "priority")
+      });
+    }
+    return { type: "urlset", entries: entries };
+  }
+  if (rootName === "sitemapindex"){
+    var smNodes = doc.getElementsByTagName("sitemap");
+    var children = [];
+    for (var j=0;j<smNodes.length;j++){
+      var cloc = getChildText(smNodes[j], "loc");
+      if (cloc) children.push(cloc.trim());
+    }
+    return { type: "sitemapindex", children: children };
+  }
+  throw new Error("Root element is <" + escapeHtml(rootName) + ">, not a recognized sitemap format.");
+}
+
+/* ---------- fetching (with gzip support) ---------- */
+async function fetchSitemapText(url){
+  var res;
+  try{
+    res = await fetch(url, { method: "GET" });
+  }catch(e){
+    var err = new Error("NETWORK_OR_CORS");
+    err.kind = "NETWORK_OR_CORS";
+    throw err;
+  }
+  if (!res.ok){
+    var httpErr = new Error("HTTP " + res.status);
+    httpErr.kind = "HTTP";
+    httpErr.status = res.status;
+    throw httpErr;
+  }
+  var isGzip = /\.gz($|\?)/i.test(url);
+  if (isGzip){
+    if (typeof DecompressionStream === "undefined"){
+      var gzErr = new Error("GZIP_UNSUPPORTED");
+      gzErr.kind = "GZIP_UNSUPPORTED";
+      throw gzErr;
+    }
+    var ds = new DecompressionStream("gzip");
+    var decompressed = res.body.pipeThrough(ds);
+    var blob = await new Response(decompressed).blob();
+    return await blob.text();
+  }
+  return await res.text();
+}
+
+/* ---------- merging into master list ---------- */
+function mergeEntries(entries){
+  var added = 0;
+  for (var i=0;i<entries.length;i++){
+    if (masterList.length >= MAX_TOTAL_URLS) break;
+    var e = entries[i];
+    if (!e.url || urlIndex.has(e.url)) continue;
+    urlIndex.add(e.url);
+    masterList.push(e);
+    added++;
+  }
+  return added;
+}
+
+/* ---------- top-level load flows ---------- */
+async function processSitemapText(text, sourceLabel){
+  var parsed;
+  try{
+    parsed = parseSitemapXml(text);
+  }catch(e){
+    showError("Couldn't parse " + sourceLabel + ": " + e.message);
+    return;
+  }
+
+  if (parsed.type === "urlset"){
+    var added = mergeEntries(parsed.entries);
+    if (masterList.length >= MAX_TOTAL_URLS){
+      showWarn("Loaded " + added + " new URL(s) from " + escapeHtml(sourceLabel) + ". Reached the " + MAX_TOTAL_URLS.toLocaleString() + "-URL safety cap — some entries may not have been added.");
+    } else {
+      showInfo("Loaded " + parsed.entries.length + " URL(s) from " + escapeHtml(sourceLabel) + " (" + added + " new).");
+    }
+    afterLoad();
+    return;
+  }
+
+  if (parsed.type === "sitemapindex"){
+    await processSitemapIndex(parsed.children);
+    return;
+  }
+}
+
+async function processSitemapIndex(childUrls){
+  var capped = childUrls.slice(0, MAX_CHILD_SITEMAPS);
+  var totalAdded = 0;
+  var failed = [];
+
+  for (var i=0;i<capped.length;i++){
+    if (masterList.length >= MAX_TOTAL_URLS) break;
+    showLoading("Fetching child sitemap " + (i+1) + " of " + capped.length + " …");
+    try{
+      var childText = await fetchSitemapText(capped[i]);
+      var childParsed = parseSitemapXml(childText);
+      if (childParsed.type === "urlset"){
+        totalAdded += mergeEntries(childParsed.entries);
+      }
+    }catch(e){
+      failed.push(capped[i]);
+    }
+  }
+
+  var extraSkipped = childUrls.length > MAX_CHILD_SITEMAPS ? (childUrls.length - MAX_CHILD_SITEMAPS) : 0;
+  var html = "Processed " + capped.length + " child sitemap(s), added " + totalAdded + " URL(s).";
+  if (extraSkipped) html += " " + extraSkipped + " additional child sitemap(s) were skipped (30-file cap).";
+  if (failed.length){
+    html += "<br>" + failed.length + " child sitemap(s) couldn't be fetched directly (likely CORS). Open each in a new tab, view source, and paste it in the \"Paste XML\" tab:<ul>" +
+      failed.slice(0,10).map(function(u){ return "<li><a href='" + escapeHtml(u) + "' target='_blank' rel='noopener noreferrer'>" + escapeHtml(u) + "</a></li>"; }).join("") +
+      "</ul>";
+    setStatus(totalAdded ? "warn" : "error", html);
+  } else {
+    showInfo(html);
+  }
+  afterLoad();
+}
+
+function handleFetchError(e, url){
+  if (e && e.kind === "NETWORK_OR_CORS"){
+    showError("Couldn't load that URL directly — it's likely blocked by the site's CORS policy (or the sitemap is offline). Open " + url + " in a new tab, view source, copy the XML, and use the \"Paste XML\" tab instead.");
+  } else if (e && e.kind === "HTTP"){
+    showError("The server responded with HTTP " + e.status + " for that URL. Double-check the sitemap link is correct.");
+  } else if (e && e.kind === "GZIP_UNSUPPORTED"){
+    showError("This is a gzipped sitemap (.xml.gz) and your browser doesn't support in-browser decompression. Try a recent version of Chrome, Edge, or Firefox, or download and unzip the file locally, then paste its contents.");
+  } else {
+    showError("Something went wrong loading that sitemap. Try again, or use \"Paste XML\".");
+  }
+}
+
+async function onFetch(){
+  var url = $("sitemapUrl").value.trim();
+  if (!url){ showError("Enter a sitemap URL first."); $("sitemapUrl").focus(); return; }
+  var btn = $("fetchBtn");
+  btn.disabled = true;
+  showLoading("Fetching " + url + " …");
+  try{
+    var text = await fetchSitemapText(url);
+    pushRecent(url);
+    await processSitemapText(text, url);
+  }catch(e){
+    handleFetchError(e, url);
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+async function onParse(){
+  var text = $("pasteArea").value.trim();
+  if (!text){ showError("Paste some sitemap XML first."); $("pasteArea").focus(); return; }
+  await processSitemapText(text, "pasted XML");
+}
+
+function afterLoad(){
+  $("resultsPanel").style.display = "block";
+  currentPage = 1;
+  renderAll();
+}
+
+/* ---------- add / delete ---------- */
+function onAddUrl(){
+  var input = $("addUrlInput");
+  var url = input.value.trim();
+  if (!url){ return; }
+  if (!/^https?:\/\//i.test(url)){
+    showError("URLs should start with http:// or https://");
+    return;
+  }
+  if (urlIndex.has(url)){
+    showWarn("That URL is already in the list.");
+    input.value = "";
+    return;
+  }
+  if (masterList.length >= MAX_TOTAL_URLS){
+    showWarn("Reached the " + MAX_TOTAL_URLS.toLocaleString() + "-URL cap — delete some entries before adding more.");
+    return;
+  }
+  urlIndex.add(url);
+  masterList.push({ url: url, lastmod: "", changefreq: "", priority: "" });
+  input.value = "";
+  $("resultsPanel").style.display = "block";
+  renderAll();
+}
+
+function deleteUrl(url){
+  var idx = masterList.findIndex(function(e){ return e.url === url; });
+  if (idx > -1) masterList.splice(idx, 1);
+  urlIndex.delete(url);
+  selected.delete(url);
+  renderAll();
+}
+
+function deleteSelected(){
+  if (!selected.size) return;
+  if (!confirm("Delete " + selected.size + " selected URL(s)? This can't be undone.")) return;
+  masterList = masterList.filter(function(e){
+    if (selected.has(e.url)){ urlIndex.delete(e.url); return false; }
+    return true;
+  });
+  selected.clear();
+  renderAll();
+}
+
+function clearAll(){
+  if (!masterList.length) return;
+  if (!confirm("Clear all " + masterList.length + " URLs? This can't be undone.")) return;
+  masterList = [];
+  urlIndex.clear();
+  selected.clear();
+  filterText = "";
+  $("searchBox").value = "";
+  renderAll();
+}
+
+/* ---------- rendering ---------- */
+function getFiltered(){
+  if (!filterText) return masterList;
+  var f = filterText.toLowerCase();
+  return masterList.filter(function(e){ return e.url.toLowerCase().indexOf(f) > -1; });
+}
+
+function renderAll(){
+  $("totalCount").textContent = masterList.length.toLocaleString();
+  var filtered = getFiltered();
+  var totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+
+  $("countLine").innerHTML = "<b>" + filtered.length.toLocaleString() + "</b>" +
+    (filterText ? " of " + masterList.length.toLocaleString() : "") + " URLs";
+
+  var body = $("resultsBody");
+  body.innerHTML = "";
+  var pageItems = filtered.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE);
+
+  $("emptyFiltered").style.display = (filtered.length === 0) ? "block" : "none";
+
+  pageItems.forEach(function(e){
+    var tr = document.createElement("tr");
+    var checked = selected.has(e.url) ? "checked" : "";
+    tr.innerHTML =
+      "<td><input type='checkbox' class='row-check' " + checked + "></td>" +
+      "<td><div class='q-text'>" + escapeHtml(e.url) + "</div></td>" +
+      "<td class='meta-col'>" + escapeHtml(e.lastmod || "—") + "</td>" +
+      "<td class='meta-col'>" + escapeHtml(e.changefreq || "—") + "</td>" +
+      "<td class='meta-col'>" + escapeHtml(e.priority || "—") + "</td>" +
+      "<td><button class='row-del' type='button'>Delete</button></td>";
+    tr.querySelector(".row-check").addEventListener("change", function(ev){
+      if (ev.target.checked) selected.add(e.url); else selected.delete(e.url);
+    });
+    tr.querySelector(".row-del").addEventListener("click", function(){ deleteUrl(e.url); });
+    body.appendChild(tr);
+  });
+
+  renderPagination(totalPages);
+
+  var selectAllBox = $("selectAllBox");
+  selectAllBox.checked = pageItems.length > 0 && pageItems.every(function(e){ return selected.has(e.url); });
+}
+
+function renderPagination(totalPages){
+  var el = $("pagination");
+  el.innerHTML = "";
+  if (totalPages <= 1) return;
+  var prev = document.createElement("button");
+  prev.textContent = "← Prev";
+  prev.disabled = currentPage <= 1;
+  prev.addEventListener("click", function(){ currentPage--; renderAll(); });
+  var info = document.createElement("span");
+  info.className = "page-info";
+  info.textContent = "Page " + currentPage + " of " + totalPages;
+  var next = document.createElement("button");
+  next.textContent = "Next →";
+  next.disabled = currentPage >= totalPages;
+  next.addEventListener("click", function(){ currentPage++; renderAll(); });
+  el.appendChild(prev); el.appendChild(info); el.appendChild(next);
+}
+
+/* ---------- export ---------- */
+function downloadBlob(filename, content, mime){
+  var blob = new Blob([content], { type: mime });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+}
+
+function buildSitemapXml(list){
+  var body = list.map(function(e){
+    var parts = "  <url>\n    <loc>" + escapeXml(e.url) + "</loc>\n";
+    if (e.lastmod) parts += "    <lastmod>" + escapeXml(e.lastmod) + "</lastmod>\n";
+    if (e.changefreq) parts += "    <changefreq>" + escapeXml(e.changefreq) + "</changefreq>\n";
+    if (e.priority) parts += "    <priority>" + escapeXml(e.priority) + "</priority>\n";
+    parts += "  </url>";
+    return parts;
+  }).join("\n");
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + body + '\n</urlset>\n';
+}
+
+function buildCsv(list){
+  var rows = [["URL","Last Modified","Change Frequency","Priority"]];
+  list.forEach(function(e){ rows.push([e.url, e.lastmod, e.changefreq, e.priority]); });
+  return rows.map(function(r){ return r.map(csvField).join(","); }).join("\r\n");
+}
+
+function onDownloadXml(){
+  if (!masterList.length) return;
+  downloadBlob("sitemap.xml", buildSitemapXml(masterList), "application/xml");
+}
+function onDownloadCsv(){
+  if (!masterList.length) return;
+  downloadBlob("sitemap-urls.csv", buildCsv(masterList), "text/csv");
+}
+
+/* ---------- wiring ---------- */
+function switchTab(tabId){
+  document.querySelectorAll(".tab-btn").forEach(function(b){
+    b.classList.toggle("active", b.getAttribute("data-tab") === tabId);
+  });
+  document.querySelectorAll(".tab-panel").forEach(function(p){
+    p.classList.toggle("active", p.id === tabId);
+  });
+  setStatus("", "");
+}
+
+function init(){
+  renderRecents();
+
+  document.querySelectorAll(".tab-btn").forEach(function(b){
+    b.addEventListener("click", function(){ switchTab(b.getAttribute("data-tab")); });
+  });
+
+  $("fetchBtn").addEventListener("click", onFetch);
+  $("sitemapUrl").addEventListener("keydown", function(e){ if (e.key === "Enter") onFetch(); });
+  $("parseBtn").addEventListener("click", onParse);
+
+  $("addUrlBtn").addEventListener("click", onAddUrl);
+  $("addUrlInput").addEventListener("keydown", function(e){ if (e.key === "Enter") onAddUrl(); });
+
+  $("searchBox").addEventListener("input", function(){
+    filterText = $("searchBox").value.trim();
+    currentPage = 1;
+    renderAll();
+  });
+
+  $("deleteSelectedBtn").addEventListener("click", deleteSelected);
+  $("clearAllBtn").addEventListener("click", clearAll);
+
+  $("selectAllBox").addEventListener("change", function(ev){
+    var filtered = getFiltered();
+    var pageItems = filtered.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE);
+    pageItems.forEach(function(e){
+      if (ev.target.checked) selected.add(e.url); else selected.delete(e.url);
+    });
+    renderAll();
+  });
+
+  $("downloadXmlBtn").addEventListener("click", onDownloadXml);
+  $("downloadCsvBtn").addEventListener("click", onDownloadCsv);
+
+  $("sitemapUrl").focus();
+}
+
+init();
+
+})();
+</script>
+</body>
+</html>
