@@ -183,7 +183,7 @@
             <input type="text" id="sitemapUrl" placeholder="https://example.com/sitemap.xml">
             <button class="btn primary" id="fetchBtn" type="button">Fetch</button>
           </div>
-          <div class="hint">Works when the site allows cross-origin reads of its sitemap. If it's blocked, switch to "Paste XML" — it always works.</div>
+          <div class="hint">Paste any sitemap link. If the site blocks direct reads from a browser, the tool retries through a relay on its own.</div>
         </div>
         <div class="recent" id="recentWrap" style="display:none;">
           <span class="label">Recent:</span>
@@ -247,7 +247,7 @@
   </main>
 
   <footer class="note">
-    Everything happens in your browser — no sitemap, URL, or file is sent to any server of ours (we don't have one). "Fetch by URL" can be blocked by a site's own CORS policy; "Paste XML" sidesteps that entirely. Sitemap indexes are expanded automatically (up to 30 child files); the working list is capped at 25,000 URLs to keep the page responsive.
+    Parsing, editing and exports all happen in your browser. "Fetch by URL" first reads the sitemap straight from the site. If the site blocks browser reads (CORS), the tool sends only that sitemap link to a relay, which fetches the file and hands it back. "Paste XML" never uses a relay. Sitemap indexes are expanded automatically (up to 30 child files); the working list is capped at 25,000 URLs to keep the page responsive.
     <br>Mohit's SEO Training · Sitemap Extractor
   </footer>
 
@@ -260,6 +260,23 @@
 var MAX_TOTAL_URLS = 25000;
 var MAX_CHILD_SITEMAPS = 30;
 var PAGE_SIZE = 50;
+var FETCH_TIMEOUT_MS = 20000;
+
+/* Relays fetch a sitemap on the server side when a site blocks browser reads (CORS).
+   They are tried in this order, only after the direct read fails.
+   1. Your own relay: the WordPress snippet in sitemap-relay-snippet.php.
+   2. and 3. Public relays: a backup, so the tool works even before the snippet is installed.
+      Delete those two entries if you want every relayed request to stay on your own site. */
+var RELAYS = [
+  { name: "Mohit's SEO Training relay", type: "json",
+    build: function(u){ return "https://mohitsseotraining.com/wp-json/mst/v1/sitemap-proxy?url=" + encodeURIComponent(u); } },
+  { name: "AllOrigins", type: "raw",
+    build: function(u){ return "https://api.allorigins.win/raw?url=" + encodeURIComponent(u); } },
+  { name: "CodeTabs", type: "raw",
+    build: function(u){ return "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u); } }
+];
+var blockedOrigins = new Set(); // origins already known to block direct reads
+var preferredRelay = -1;        // index of the relay that worked last
 
 var masterList = [];      // [{url, lastmod, changefreq, priority}]
 var urlIndex = new Set(); // for O(1) dedupe
@@ -334,6 +351,7 @@ function getChildText(node, tagName){
 }
 
 function parseSitemapXml(text){
+  text = String(text).replace(/^\uFEFF/, "").trim();
   var doc = new DOMParser().parseFromString(text, "application/xml");
   var errorNode = doc.querySelector("parsererror");
   if (errorNode) throw new Error("That content isn't valid XML.");
@@ -369,35 +387,128 @@ function parseSitemapXml(text){
   throw new Error("Root element is <" + escapeHtml(rootName) + ">, not a recognized sitemap format.");
 }
 
-/* ---------- fetching (with gzip support) ---------- */
-async function fetchSitemapText(url){
+/* ---------- fetching (direct first, relay fallback, gzip support) ---------- */
+function kindError(kind, status){
+  var err = new Error(kind);
+  err.kind = kind;
+  if (status) err.status = status;
+  return err;
+}
+
+function fetchWithTimeout(url){
+  var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  var timer = controller ? setTimeout(function(){ controller.abort(); }, FETCH_TIMEOUT_MS) : null;
+  var opts = { method: "GET" };
+  if (controller) opts.signal = controller.signal;
+  return fetch(url, opts).then(
+    function(res){ if (timer) clearTimeout(timer); return res; },
+    function(e){ if (timer) clearTimeout(timer); throw e; }
+  );
+}
+
+/* Turns raw bytes into text. Detects gzip by its first two bytes, so it works
+   whether or not the link ends in .gz, and whether or not the browser already unzipped it. */
+async function bytesToText(buffer){
+  var bytes = new Uint8Array(buffer);
+  if (bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b){
+    if (typeof DecompressionStream === "undefined") throw kindError("GZIP_UNSUPPORTED");
+    var unzipped = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    bytes = new Uint8Array(await new Response(unzipped).arrayBuffer());
+  }
+  var head = "";
+  var headLen = Math.min(bytes.length, 200);
+  for (var i=0;i<headLen;i++) head += String.fromCharCode(bytes[i]);
+  var m = /<\?xml[^>]*encoding=["']([A-Za-z0-9._-]+)["']/i.exec(head);
+  var decoder;
+  try{ decoder = new TextDecoder(m ? m[1] : "utf-8"); }catch(e){ decoder = new TextDecoder("utf-8"); }
+  return decoder.decode(bytes);
+}
+
+function looksLikeSitemap(text){
+  return /<(?:[a-z0-9]+:)?(urlset|sitemapindex)\b/i.test(String(text).slice(0, 20000));
+}
+
+function originOf(url){
+  try{ return new URL(url).origin; }catch(e){ return url; }
+}
+
+async function fetchDirect(url){
   var res;
   try{
-    res = await fetch(url, { method: "GET" });
+    res = await fetchWithTimeout(url);
   }catch(e){
-    var err = new Error("NETWORK_OR_CORS");
-    err.kind = "NETWORK_OR_CORS";
-    throw err;
+    throw kindError("NETWORK_OR_CORS");
   }
-  if (!res.ok){
-    var httpErr = new Error("HTTP " + res.status);
-    httpErr.kind = "HTTP";
-    httpErr.status = res.status;
-    throw httpErr;
+  if (!res.ok) throw kindError("HTTP", res.status);
+  var buffer;
+  try{
+    buffer = await res.arrayBuffer();
+  }catch(e){
+    throw kindError("NETWORK_OR_CORS");
   }
-  var isGzip = /\.gz($|\?)/i.test(url);
-  if (isGzip){
-    if (typeof DecompressionStream === "undefined"){
-      var gzErr = new Error("GZIP_UNSUPPORTED");
-      gzErr.kind = "GZIP_UNSUPPORTED";
-      throw gzErr;
+  return await bytesToText(buffer);
+}
+
+async function fetchViaRelay(relay, url){
+  var res;
+  try{
+    res = await fetchWithTimeout(relay.build(url));
+  }catch(e){
+    throw kindError("RELAY_FAILED");
+  }
+
+  if (relay.type === "json"){
+    var data = null;
+    try{ data = await res.json(); }catch(e){ data = null; }
+    if (res.ok && data && typeof data.body === "string") return data.body;
+    if (data && data.data && data.data.upstream_status) throw kindError("HTTP", data.data.upstream_status);
+    if (data && data.code === "mst_not_sitemap") throw kindError("NOT_SITEMAP");
+    throw kindError("RELAY_FAILED");
+  }
+
+  if (!res.ok) throw kindError("RELAY_FAILED");
+  var text;
+  try{
+    text = await bytesToText(await res.arrayBuffer());
+  }catch(e){
+    if (e && e.kind === "GZIP_UNSUPPORTED") throw e;
+    throw kindError("RELAY_FAILED");
+  }
+  // Public relays sometimes answer "200 OK" with an error page. Only accept a real sitemap.
+  if (!looksLikeSitemap(text)) throw kindError("RELAY_FAILED");
+  return text;
+}
+
+async function fetchSitemapText(url, onRelay){
+  var origin = originOf(url);
+
+  if (!blockedOrigins.has(origin)){
+    try{
+      return await fetchDirect(url);
+    }catch(e){
+      if (!e || e.kind !== "NETWORK_OR_CORS") throw e;
+      blockedOrigins.add(origin);
     }
-    var ds = new DecompressionStream("gzip");
-    var decompressed = res.body.pipeThrough(ds);
-    var blob = await new Response(decompressed).blob();
-    return await blob.text();
   }
-  return await res.text();
+
+  if (typeof onRelay === "function") onRelay();
+
+  var order = [];
+  if (preferredRelay > -1) order.push(preferredRelay);
+  for (var i=0;i<RELAYS.length;i++){ if (i !== preferredRelay) order.push(i); }
+
+  var clearAnswer = null; // a clear answer from a relay, e.g. "that page is a 404"
+  for (var j=0;j<order.length;j++){
+    try{
+      var text = await fetchViaRelay(RELAYS[order[j]], url);
+      preferredRelay = order[j];
+      return text;
+    }catch(e){
+      if (e && e.kind === "GZIP_UNSUPPORTED") throw e;
+      if (e && (e.kind === "HTTP" || e.kind === "NOT_SITEMAP") && !clearAnswer) clearAnswer = e;
+    }
+  }
+  throw clearAnswer || kindError("NETWORK_OR_CORS");
 }
 
 /* ---------- merging into master list ---------- */
@@ -450,7 +561,9 @@ async function processSitemapIndex(childUrls){
     if (masterList.length >= MAX_TOTAL_URLS) break;
     showLoading("Fetching child sitemap " + (i+1) + " of " + capped.length + " …");
     try{
-      var childText = await fetchSitemapText(capped[i]);
+      var childText = await fetchSitemapText(capped[i], (function(n){
+        return function(){ showLoading("Fetching child sitemap " + n + " of " + capped.length + " through a relay …"); };
+      })(i+1));
       var childParsed = parseSitemapXml(childText);
       if (childParsed.type === "urlset"){
         totalAdded += mergeEntries(childParsed.entries);
@@ -464,7 +577,7 @@ async function processSitemapIndex(childUrls){
   var html = "Processed " + capped.length + " child sitemap(s), added " + totalAdded + " URL(s).";
   if (extraSkipped) html += " " + extraSkipped + " additional child sitemap(s) were skipped (30-file cap).";
   if (failed.length){
-    html += "<br>" + failed.length + " child sitemap(s) couldn't be fetched directly (likely CORS). Open each in a new tab, view source, and paste it in the \"Paste XML\" tab:<ul>" +
+    html += "<br>" + failed.length + " child sitemap(s) couldn't be fetched, even through the relay. Open each in a new tab, view source, and paste it in the \"Paste XML\" tab:<ul>" +
       failed.slice(0,10).map(function(u){ return "<li><a href='" + escapeHtml(u) + "' target='_blank' rel='noopener noreferrer'>" + escapeHtml(u) + "</a></li>"; }).join("") +
       "</ul>";
     setStatus(totalAdded ? "warn" : "error", html);
@@ -476,7 +589,9 @@ async function processSitemapIndex(childUrls){
 
 function handleFetchError(e, url){
   if (e && e.kind === "NETWORK_OR_CORS"){
-    showError("Couldn't load that URL directly — it's likely blocked by the site's CORS policy (or the sitemap is offline). Open " + url + " in a new tab, view source, copy the XML, and use the \"Paste XML\" tab instead.");
+    showError("Couldn't load that sitemap directly or through the relay. The link may be wrong, the site may be offline, or it may block automated requests. Open " + url + " in a new tab. If it loads there, view source, copy the XML, and use the \"Paste XML\" tab.");
+  } else if (e && e.kind === "NOT_SITEMAP"){
+    showError("That link loaded, but it isn't an XML sitemap. Sitemap links usually end in /sitemap.xml or /sitemap_index.xml.");
   } else if (e && e.kind === "HTTP"){
     showError("The server responded with HTTP " + e.status + " for that URL. Double-check the sitemap link is correct.");
   } else if (e && e.kind === "GZIP_UNSUPPORTED"){
@@ -489,11 +604,17 @@ function handleFetchError(e, url){
 async function onFetch(){
   var url = $("sitemapUrl").value.trim();
   if (!url){ showError("Enter a sitemap URL first."); $("sitemapUrl").focus(); return; }
+  if (!/^https?:\/\//i.test(url)){
+    url = "https://" + url.replace(/^\/+/, "");
+    $("sitemapUrl").value = url;
+  }
   var btn = $("fetchBtn");
   btn.disabled = true;
   showLoading("Fetching " + url + " …");
   try{
-    var text = await fetchSitemapText(url);
+    var text = await fetchSitemapText(url, function(){
+      showLoading("The site blocks direct reads. Retrying through a relay …");
+    });
     pushRecent(url);
     await processSitemapText(text, url);
   }catch(e){
